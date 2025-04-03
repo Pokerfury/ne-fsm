@@ -89,6 +89,33 @@ pub mod sync {
             &mut self.context
         }
 
+        pub fn fire_event(&mut self, event: &E) -> Result<(), Error> {
+            let c_state = match &self.current_state {
+                Some(state) => state,
+                None => return Err(Error::StateMachineNotInitialized),
+            };
+
+            let current_state_ref = self.current_state.as_ref().unwrap();
+            let state = if let Some(existing_state) = self.states.get_mut(current_state_ref) {
+                existing_state
+            } else {
+                let new_state = S::create(current_state_ref);
+                let current_state_clone = self.current_state.clone().unwrap();
+                self.states.entry(current_state_clone).or_insert(new_state)
+            };
+
+            match state.on_event(event, &mut self.context) {
+                Response::Handled => {}
+                Response::Transition(new_state) => {
+                    if new_state != *c_state {
+                        self.transition_to(new_state);
+                    }
+                }
+            }
+
+            Ok(())
+        }
+
         // Define a method to initialize the state machine with an initial state
         // Note how the state objects are cached in a HashMap and not recreated every time we transition to this event.
         pub fn init(&mut self, initial_state: S) -> Result<(), Error> {
